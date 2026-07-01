@@ -7,13 +7,25 @@ const axiosClient = axios.create({
   },
 });
 
-// Automatically inject JWT token into requests
-axiosClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('kb_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+// Safe inject token
+axiosClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('kb_token');
+    if (token) {
+      if (config.headers) {
+        config.headers['Authorization'] = `Bearer ${token}`;
+      } else {
+        config.headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        };
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
 export default axiosClient;
