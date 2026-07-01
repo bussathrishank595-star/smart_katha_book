@@ -28,7 +28,6 @@ const billSchema = new mongoose.Schema(
     billNumber: {
       type: String,
       required: true,
-      unique: true,
     },
     items: [billItemSchema],
     totalAmount: {
@@ -74,6 +73,9 @@ const billSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Compound index: billNumber must be unique PER shopkeeper (userId)
+billSchema.index({ billNumber: 1, userId: 1 }, { unique: true });
 
 // Auto-update status and accruedPenalty
 billSchema.methods.updateStatus = function () {
