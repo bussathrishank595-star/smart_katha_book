@@ -1,7 +1,14 @@
 import axios from 'axios';
 
+// Detect if we are running in production (Vercel) or development (local)
+const isProd = import.meta.env.PROD || window.location.hostname !== 'localhost';
+
+const baseURL = isProd 
+  ? 'https://smart-katha-book.onrender.com/api'
+  : (import.meta.env.VITE_API_URL || 'http://localhost:5000/api');
+
 const axiosClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
