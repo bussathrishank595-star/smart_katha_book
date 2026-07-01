@@ -18,30 +18,31 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Seed default admin by directly saving pre-hashed password
+// Seed default admin only if it does NOT exist. Never delete on startup.
 async function seedDefaultAdmin() {
   try {
-    // Delete any old admin@kathabook.com records first
-    await User.deleteMany({ email: 'admin@kathabook.com' });
-    
-    // Hash 'admin123' manually
-    const salt = await bcrypt.genSalt(10);
-    const preHashedPassword = await bcrypt.hash('admin123', salt);
+    const admin = await User.findOne({ email: 'admin@kathabook.com' });
+    if (!admin) {
+      // Hash 'admin123' manually
+      const salt = await bcrypt.genSalt(10);
+      const preHashedPassword = await bcrypt.hash('admin123', salt);
 
-    // Save directly to database bypass Mongoose hooks by using mongo connection directly
-    await mongoose.connection.collection('users').insertOne({
-      name: 'Admin Shopkeeper',
-      email: 'admin@kathabook.com',
-      password: preHashedPassword,
-      shopName: 'My Smart Katha Book',
-      phone: '9999999999',
-      address: 'Main Shop Market',
-      defaultPenaltyPerDay: 10,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-    
-    console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (hashed exactly once)');
+      // Save directly to database
+      await mongoose.connection.collection('users').insertOne({
+        name: 'Admin Shopkeeper',
+        email: 'admin@kathabook.com',
+        password: preHashedPassword,
+        shopName: 'My Smart Katha Book',
+        phone: '9999999999',
+        address: 'Main Shop Market',
+        defaultPenaltyPerDay: 10,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (hashed exactly once)');
+    } else {
+      console.log('ℹ️ Admin user already exists in database. Skipping seed.');
+    }
   } catch (err) {
     console.error('❌ Admin seed error:', err);
   }
