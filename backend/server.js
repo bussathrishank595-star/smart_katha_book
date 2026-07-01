@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 const User = require('./models/User');
 
 const authRoutes = require('./routes/auth');
@@ -17,24 +18,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Seed default admin and ensure password is clean
+// Seed default admin by directly saving pre-hashed password
 async function seedDefaultAdmin() {
   try {
-    // Delete any old admin@kathabook.com to clear double-hashed versions
+    // Delete any old admin@kathabook.com records first
     await User.deleteMany({ email: 'admin@kathabook.com' });
     
-    // Create new admin with plain password 'admin123'
-    // Mongoose schema pre-save hook will hash it exactly once
-    await User.create({
+    // Hash 'admin123' manually
+    const salt = await bcrypt.genSalt(10);
+    const preHashedPassword = await bcrypt.hash('admin123', salt);
+
+    // Save directly to database bypass Mongoose hooks by using mongo connection directly
+    await mongoose.connection.collection('users').insertOne({
       name: 'Admin Shopkeeper',
       email: 'admin@kathabook.com',
-      password: 'admin123',
+      password: preHashedPassword,
       shopName: 'My Smart Katha Book',
       phone: '9999999999',
       address: 'Main Shop Market',
-      defaultPenaltyPerDay: 10
+      defaultPenaltyPerDay: 10,
+      createdAt: new Date(),
+      updatedAt: new Date()
     });
-    console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (clean hash)');
+    
+    console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (hashed exactly once)');
   } catch (err) {
     console.error('❌ Admin seed error:', err);
   }
