@@ -13,12 +13,12 @@ router.get('/stats', async (req, res) => {
     const userId = req.user._id;
     const now = new Date();
 
-    // Date helpers
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
-    const startOfTomorrow = endOfToday;
-    const endOfTomorrow = new Date(startOfTomorrow.getTime() + 24 * 60 * 60 * 1000);
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // UTC Date helper boundaries
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1);
+    const startOfTomorrow = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+    const endOfTomorrow = new Date(startOfTomorrow.getTime() + 24 * 60 * 60 * 1000 - 1);
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
 
     const [
       totalCustomers,
@@ -30,7 +30,7 @@ router.get('/stats', async (req, res) => {
       Customer.countDocuments({ userId }),
       Bill.countDocuments({ userId }),
       Bill.find({ userId }),
-      Payment.find({ userId, paymentDate: { $gte: startOfToday, $lt: endOfToday } }),
+      Payment.find({ userId, paymentDate: { $gte: startOfToday, $lte: endOfToday } }),
       Payment.find({ userId, paymentDate: { $gte: startOfMonth } }),
     ]);
 
@@ -44,16 +44,17 @@ router.get('/stats', async (req, res) => {
       totalSales += bill.totalAmount;
       if (bill.dueAmount > 0) {
         totalPending += bill.dueAmount;
-        if (now > new Date(bill.dueDate)) {
+        const dueDate = new Date(bill.dueDate);
+        if (now > dueDate) {
           overdueCount++;
         } else if (
-          new Date(bill.dueDate) >= startOfToday &&
-          new Date(bill.dueDate) < endOfToday
+          dueDate >= startOfToday &&
+          dueDate <= endOfToday
         ) {
           dueTodayCount++;
         } else if (
-          new Date(bill.dueDate) >= startOfTomorrow &&
-          new Date(bill.dueDate) < endOfTomorrow
+          dueDate >= startOfTomorrow &&
+          dueDate <= endOfTomorrow
         ) {
           dueTomorrowCount++;
         }
@@ -88,22 +89,21 @@ router.get('/charts', async (req, res) => {
     const userId = req.user._id;
     const now = new Date();
 
-    // Last 6 months labels
+    // Last 6 months labels using UTC
     const months = [];
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1, 0, 0, 0, 0));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 0, 23, 59, 59, 999));
       months.push({
-        label: d.toLocaleString('default', { month: 'short' }),
-        year: d.getFullYear(),
-        month: d.getMonth(),
-        start: d,
-        end: new Date(d.getFullYear(), d.getMonth() + 1, 1),
+        label: start.toLocaleString('default', { month: 'short' }),
+        start,
+        end,
       });
     }
 
     const monthlySales = await Promise.all(
       months.map(async ({ label, start, end }) => {
-        const bills = await Bill.find({ userId, createdAt: { $gte: start, $lt: end } });
+        const bills = await Bill.find({ userId, createdAt: { $gte: start, $lte: end } });
         const sales = bills.reduce((s, b) => s + b.totalAmount, 0);
         const collected = bills.reduce((s, b) => s + b.paidAmount, 0);
         const due = bills.reduce((s, b) => s + b.dueAmount, 0);
@@ -141,8 +141,8 @@ router.get('/alerts', async (req, res) => {
   try {
     const userId = req.user._id;
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1);
     const endOfTomorrow = new Date(endOfToday.getTime() + 24 * 60 * 60 * 1000);
 
     const bills = await Bill.find({ userId, status: { $ne: 'paid' } })
@@ -167,8 +167,8 @@ router.get('/alerts', async (req, res) => {
       };
 
       if (now > dueDate) overdue.push(item);
-      else if (dueDate >= startOfToday && dueDate < endOfToday) dueToday.push(item);
-      else if (dueDate >= endOfToday && dueDate < endOfTomorrow) dueTomorrow.push(item);
+      else if (dueDate >= startOfToday && dueDate <= endOfToday) dueToday.push(item);
+      else if (dueDate > endOfToday && dueDate <= endOfTomorrow) dueTomorrow.push(item);
       else upcoming.push(item);
     });
 

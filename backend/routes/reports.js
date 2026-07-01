@@ -10,25 +10,30 @@ router.use(protect);
 const getDateRange = (type, startDate, endDate) => {
   const now = new Date();
   if (startDate && endDate) {
-    return { start: new Date(startDate), end: new Date(new Date(endDate).setHours(23, 59, 59, 999)) };
+    const start = new Date(startDate);
+    start.setUTCHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setUTCHours(23, 59, 59, 999);
+    return { start, end };
   }
+
   switch (type) {
-    case 'daily':
-      return {
-        start: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-        end: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
-      };
-    case 'weekly':
-      const dayOfWeek = now.getDay();
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - dayOfWeek);
-      startOfWeek.setHours(0, 0, 0, 0);
-      return { start: startOfWeek, end: new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000) };
-    case 'monthly':
-      return {
-        start: new Date(now.getFullYear(), now.getMonth(), 1),
-        end: new Date(now.getFullYear(), now.getMonth() + 1, 1),
-      };
+    case 'daily': {
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+      return { start, end };
+    }
+    case 'weekly': {
+      const dayOfWeek = now.getUTCDay();
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - dayOfWeek, 0, 0, 0, 0));
+      const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+      return { start, end };
+    }
+    case 'monthly': {
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+      return { start, end };
+    }
     default:
       return { start: new Date(0), end: new Date() };
   }
@@ -41,10 +46,10 @@ router.get('/', async (req, res) => {
     const userId = req.user._id;
     const { start, end } = getDateRange(type, startDate, endDate);
 
-    const bills = await Bill.find({ userId, createdAt: { $gte: start, $lt: end } })
+    const bills = await Bill.find({ userId, createdAt: { $gte: start, $lte: end } })
       .populate('customerId', 'name phone shopName');
 
-    const payments = await Payment.find({ userId, paymentDate: { $gte: start, $lt: end } })
+    const payments = await Payment.find({ userId, paymentDate: { $gte: start, $lte: end } })
       .populate('customerId', 'name phone shopName')
       .populate('billId', 'billNumber');
 
@@ -53,7 +58,7 @@ router.get('/', async (req, res) => {
     const totalPending = bills.reduce((s, b) => s + b.dueAmount, 0);
     const totalBills = bills.length;
 
-    // Pending dues report
+    // Pending dues report (all time outstanding)
     const pendingBills = await Bill.find({ userId, status: { $ne: 'paid' } })
       .populate('customerId', 'name phone shopName');
 
