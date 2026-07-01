@@ -20,28 +20,25 @@ app.use(express.json());
 // Seed default admin if database is empty
 async function seedDefaultAdmin() {
   try {
-    const adminCount = await User.countDocuments();
-    if (adminCount === 0) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+    const admin = await User.findOne({ email: 'admin@kathabook.com' });
+    if (!admin) {
+      // Create user with PLAIN password 'admin123'
+      // The User model schema pre-save hook will hash it exactly once.
       await User.create({
         name: 'Admin Shopkeeper',
         email: 'admin@kathabook.com',
-        password: hashedPassword,
+        password: 'admin123',
         shopName: 'My Smart Katha Book',
         phone: '9999999999',
         address: 'Main Shop Market',
         defaultPenaltyPerDay: 10
       });
-      console.log('✅ Default admin seeded: admin@kathabook.com / admin123');
+      console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (hashed once)');
     } else {
       console.log('ℹ️ Admin user already exists in database');
     }
   } catch (err) {
-    if (err.code === 11000) {
-      console.log('ℹ️ Admin user already exists (duplicate key handled)');
-    } else {
-      console.error('❌ Admin seed error:', err);
-    }
+    console.error('❌ Admin seed error:', err);
   }
 }
 
