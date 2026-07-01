@@ -20,23 +20,38 @@ app.use(express.json());
 // Seed default admin if database is empty
 async function seedDefaultAdmin() {
   try {
-    // Clear any corrupted/double-hashed admin user first
-    await User.deleteMany({ email: 'admin@kathabook.com' });
-
-    // Create user with PLAIN password 'admin123'
-    // The User model schema pre-save hook will hash it exactly once.
-    await User.create({
-      name: 'Admin Shopkeeper',
-      email: 'admin@kathabook.com',
-      password: 'admin123',
-      shopName: 'My Smart Katha Book',
-      phone: '9999999999',
-      address: 'Main Shop Market',
-      defaultPenaltyPerDay: 10
-    });
-    console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (hashed once)');
+    const adminCount = await User.countDocuments();
+    if (adminCount === 0) {
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      await User.create({
+        name: 'Admin Shopkeeper',
+        email: 'admin@kathabook.com',
+        password: hashedPassword,
+        shopName: 'My Smart Katha Book',
+        phone: '9999999999',
+        address: 'Main Shop Market',
+        defaultPenaltyPerDay: 10
+      });
+      console.log('✅ Default admin seeded: admin@kathabook.com / admin123');
+    } else {
+      console.log('ℹ️ Admin user already exists in database');
+    }
   } catch (err) {
-    console.error('❌ Admin seed error:', err);
+    if (err.code === 11000) {
+      console.log('ℹ️ Admin user already exists (duplicate key handled)');
+    } else {
+      console.error('❌ Admin seed error:', err);
+    }
+  }
+}
+
+// Drop the old global index automatically
+async function dropDuplicateIndex() {
+  try {
+    await mongoose.connection.collection('bills').dropIndex('billNumber_1');
+    console.log('🗑️ Successfully dropped old global unique index billNumber_1');
+  } catch (err) {
+    console.log('ℹ️ Global index billNumber_1 not present or already dropped');
   }
 }
 
@@ -45,6 +60,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB connected');
     seedDefaultAdmin();
+    dropDuplicateIndex();
   })
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
