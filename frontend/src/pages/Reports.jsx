@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Download, Filter } from 'lucide-react';
+import axiosClient from '../api/axiosClient';
 import StatusBadge from '../components/UI/StatusBadge';
 import { formatCurrency, formatDate } from '../utils/dateHelpers';
 import { generateReportPDF } from '../utils/pdfGenerator';
-import { getBills, getCustomers, getShop } from '../store/localStore';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const REPORT_TYPES = [
@@ -15,89 +16,39 @@ const REPORT_TYPES = [
 ];
 
 export default function Reports() {
-  const shop = getShop() || {};
+  const { user } = useAuth();
   const [reportType, setReportType] = useState('monthly');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('bills');
 
-  const generateReport = () => {
-    const bills = getBills();
-    const customers = getCustomers();
-    const custMap = Object.fromEntries(customers.map(c => [c.id, c]));
-
-    const now = new Date();
-    let startLimit = new Date(0);
-    let endLimit = new Date();
-
-    if (reportType === 'daily') {
-      startLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    } else if (reportType === 'weekly') {
-      startLimit = new Date();
-      startLimit.setDate(now.getDate() - 7);
-    } else if (reportType === 'monthly') {
-      startLimit = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else if (reportType === 'custom') {
-      if (!startDate || !endDate) {
-        toast.error('Please select date range');
-        return;
+  const fetchReport = async () => {
+    setLoading(true);
+    try {
+      const params = { type: reportType };
+      if (reportType === 'custom') {
+        if (!startDate || !endDate) { toast.error('Please select date range'); setLoading(false); return; }
+        params.startDate = startDate;
+        params.endDate = endDate;
       }
-      startLimit = new Date(startDate);
-      // set to end of that day
-      endLimit = new Date(endDate);
-      endLimit.setHours(23, 59, 59, 999);
+      const { data } = await axiosClient.get('/reports', { params });
+      setReport(data.report);
+    } catch {
+      toast.error('Failed to load report');
+    } finally {
+      setLoading(false);
     }
-
-    const filteredBills = bills.filter(b => {
-      const created = new Date(b.createdAt);
-      return created >= startLimit && created <= endLimit;
-    });
-
-    const reportBills = filteredBills.map(b => ({ ...b, customerId: custMap[b.customerId] }));
-
-    const reportPayments = [];
-    filteredBills.forEach(b => {
-      if (b.payments) {
-        b.payments.forEach(p => {
-          const pd = new Date(p.date);
-          if (pd >= startLimit && pd <= endLimit) {
-            reportPayments.push({
-              ...p,
-              billNumber: b.billNumber,
-              customer: custMap[b.customerId]
-            });
-          }
-        });
-      }
-    });
-
-    const pendingDues = bills.filter(b => b.dueAmount > 0).map(b => ({ ...b, customerId: custMap[b.customerId] }));
-
-    const totalSales = reportBills.reduce((s, b) => s + b.totalAmount, 0);
-    const totalCollected = reportPayments.reduce((s, p) => s + p.amount, 0);
-    const totalPending = pendingDues.reduce((s, b) => s + b.dueAmount, 0);
-
-    setReport({
-      summary: {
-        totalSales,
-        totalCollected,
-        totalPending,
-        totalBills: reportBills.length
-      },
-      bills: reportBills,
-      payments: reportPayments,
-      pendingDues
-    });
   };
 
   useEffect(() => {
-    if (reportType !== 'custom') generateReport();
+    if (reportType !== 'custom') fetchReport();
   }, [reportType]);
 
   const handleDownloadPDF = () => {
     if (!report) return;
-    generateReportPDF(report, shop);
+    generateReportPDF(report, user);
   };
 
   const summaryCards = report
@@ -111,6 +62,7 @@ export default function Reports() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Controls */}
       <div className="card">
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
           <div className="flex-1">
@@ -142,8 +94,8 @@ export default function Reports() {
                 <label className="label">End Date</label>
                 <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="input" />
               </div>
-              <button onClick={generateReport} className="btn-primary">
-                Apply
+              <button onClick={fetchReport} className="btn-primary gap-2">
+                <Filter className="w-4 h-4" /> Apply
               </button>
             </div>
           )}
@@ -156,8 +108,13 @@ export default function Reports() {
         </div>
       </div>
 
-      {report ? (
+      {loading ? (
+        <div className="grid grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-20 rounded-2xl" />)}
+        </div>
+      ) : report ? (
         <>
+          {/* Summary */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {summaryCards.map(({ label, value, color }) => (
               <div key={label} className={`rounded-2xl p-4 ${color}`}>
@@ -167,6 +124,7 @@ export default function Reports() {
             ))}
           </div>
 
+          {/* Tabs */}
           <div className="card !p-0 overflow-hidden">
             <div className="flex border-b border-slate-200 dark:border-slate-700">
               {[
@@ -197,7 +155,7 @@ export default function Reports() {
                     </thead>
                     <tbody>
                       {(report.bills || []).map((b) => (
-                        <tr key={b.id}>
+                        <tr key={b._id}>
                           <td className="font-mono text-xs">{b.billNumber}</td>
                           <td>
                             <p className="font-medium text-slate-900 dark:text-white">{b.customerId?.name}</p>
@@ -222,13 +180,13 @@ export default function Reports() {
                       <tr><th>Date</th><th>Customer</th><th>Bill No</th><th>Amount</th><th>Method</th></tr>
                     </thead>
                     <tbody>
-                      {(report.payments || []).map((p, i) => (
-                        <tr key={i}>
-                          <td className="text-xs">{formatDate(p.date)}</td>
-                          <td>{p.customer?.name}</td>
-                          <td className="font-mono text-xs">{p.billNumber}</td>
-                          <td className="text-emerald-600 dark:text-emerald-400 font-semibold">{formatCurrency(p.amount)}</td>
-                          <td className="capitalize text-xs">{p.method}</td>
+                      {(report.payments || []).map((p) => (
+                        <tr key={p._id}>
+                          <td className="text-xs">{formatDate(p.paymentDate)}</td>
+                          <td>{p.customerId?.name}</td>
+                          <td className="font-mono text-xs">{p.billId?.billNumber || '—'}</td>
+                          <td className="text-emerald-600 dark:text-emerald-400 font-semibold">{formatCurrency(p.amountPaid)}</td>
+                          <td className="capitalize text-xs">{(p.paymentMethod || 'cash').replace('_', ' ')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -240,11 +198,11 @@ export default function Reports() {
                 <div className="table-wrapper !border-0">
                   <table className="table">
                     <thead>
-                      <tr><th>Customer</th><th>Bill No</th><th>Due Date</th><th>Due</th><th>Status</th></tr>
+                      <tr><th>Customer</th><th>Bill No</th><th>Due Date</th><th>Due</th><th>Penalty</th><th>Total</th><th>Status</th></tr>
                     </thead>
                     <tbody>
                       {(report.pendingDues || []).map((b) => (
-                        <tr key={b.id}>
+                        <tr key={b._id}>
                           <td>
                             <p className="font-medium text-slate-900 dark:text-white">{b.customerId?.name}</p>
                             <p className="text-xs text-slate-500">{b.customerId?.phone}</p>
@@ -252,6 +210,8 @@ export default function Reports() {
                           <td className="font-mono text-xs">{b.billNumber}</td>
                           <td className="text-xs">{formatDate(b.dueDate)}</td>
                           <td className="text-red-600 dark:text-red-400 font-semibold">{formatCurrency(b.dueAmount)}</td>
+                          <td className="text-orange-500">{b.accruedPenalty > 0 ? formatCurrency(b.accruedPenalty) : '—'}</td>
+                          <td className="font-bold text-red-700 dark:text-red-400">{formatCurrency(b.totalOutstanding || b.dueAmount)}</td>
                           <td><StatusBadge status={b.status} /></td>
                         </tr>
                       ))}
