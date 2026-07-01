@@ -17,26 +17,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Seed default admin if database is empty
+// Seed default admin and ensure password is clean
 async function seedDefaultAdmin() {
   try {
-    const admin = await User.findOne({ email: 'admin@kathabook.com' });
-    if (!admin) {
-      // Create user with PLAIN password 'admin123'
-      // The User model schema pre-save hook will hash it exactly once.
-      await User.create({
-        name: 'Admin Shopkeeper',
-        email: 'admin@kathabook.com',
-        password: 'admin123',
-        shopName: 'My Smart Katha Book',
-        phone: '9999999999',
-        address: 'Main Shop Market',
-        defaultPenaltyPerDay: 10
-      });
-      console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (hashed once)');
-    } else {
-      console.log('ℹ️ Admin user already exists in database');
-    }
+    // Delete any old admin@kathabook.com to clear double-hashed versions
+    await User.deleteMany({ email: 'admin@kathabook.com' });
+    
+    // Create new admin with plain password 'admin123'
+    // Mongoose schema pre-save hook will hash it exactly once
+    await User.create({
+      name: 'Admin Shopkeeper',
+      email: 'admin@kathabook.com',
+      password: 'admin123',
+      shopName: 'My Smart Katha Book',
+      phone: '9999999999',
+      address: 'Main Shop Market',
+      defaultPenaltyPerDay: 10
+    });
+    console.log('✅ Default admin seeded: admin@kathabook.com / admin123 (clean hash)');
   } catch (err) {
     console.error('❌ Admin seed error:', err);
   }
